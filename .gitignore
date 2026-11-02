@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.claude/state/*.json
+.claude/frontend.config.json
+.mcp.json
+.DS_Store

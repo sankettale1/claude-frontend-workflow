@@ -1,0 +1,56 @@
+{
+  "stack": "drupal-legacy",
+  "theme": {
+    "name": "mytheme",
+    "path": "themes/custom/mytheme",
+    "profile": ".claude/theme-discovery/theme-profile.json"
+  },
+  "localUrl": "https://myproject.ddev.site",
+  "build": {
+    "command": "npm run build",
+    "cwd": "themes/custom/mytheme",
+    "node": "~/.nvm/versions/node/v16.18.1/bin"
+  },
+  "screenshotNode": "~/.nvm/versions/node/v22.9.0/bin/node",
+  "cacheClear": "ddev drush cr",
+  "protectedPaths": [
+    "core/",
+    "vendor/",
+    "modules/contrib/",
+    "themes/contrib/",
+    "profiles/contrib/",
+    "libraries/",
+    "node_modules/",
+    "sites/default/files/",
+    "patches/"
+  ],
+  "askPaths": [
+    "sites/default/settings.php",
+    "sites/default/settings.local.php",
+    "sites/default/services.yml",
+    "composer.json",
+    "composer.lock",
+    "package.json",
+    "package-lock.json",
+    "yarn.lock",
+    "gulpfile.js"
+  ],
+  "compiled": [
+    {
+      "source": "themes/custom/mytheme/dev/scss/",
+      "sourceExt": ".scss",
+      "output": "themes/custom/mytheme/css/",
+      "outputExt": ".css",
+      "rtlSuffix": "-rtl"
+    },
+    {
+      "source": "themes/custom/mytheme/dev/js/",
+      "sourceExt": ".js",
+      "output": "themes/custom/mytheme/js/",
+      "outputExt": ".js"
+    }
+  ],
+  "reviewRoots": ["themes/custom/mytheme/", "modules/custom/"],
+  "reviewGate": "block",
+  "reportsDir": "themes/custom/mytheme/docs/frontend-reviews"
+}
