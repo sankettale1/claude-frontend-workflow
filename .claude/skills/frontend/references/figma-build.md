@@ -1,12 +1,12 @@
 # Build mode: Figma → code in the project's own structure
 
-Same discipline as `/figma-to-sdc` (fetch, token map, spec, human gates, visual QA), but the **output follows the stack reference**. For `drupal-legacy`, that means templates + SCSS + JS + libraries.yml, **not** SDC.
+Same discipline as `/figma-to-sdc` (fetch, token map, spec, human gates, visual QA), and the **output follows the project's structure**: `newComponents: "sdc"` → an SDC folder + a thin adapter template (`stacks/drupal-sdc.md`); `"legacy"` → templates + Sass + JS + libraries.yml (`stacks/drupal-legacy.md`); other stacks → `stacks/detect.md`.
 
 Read first (skip any that are missing):
 - `.claude/docs/simplified-mcp-format.md`: how to read the Framelink MCP output
 - `.claude/docs/figma-to-code.md`: layout, token, responsive and asset rules
 - `.claude/docs/deviation-rules.md`: when you may auto-fix and when you must stop
-- `references/stacks/<stack>.md`
+- the stack reference chosen in SKILL.md Step 0.2
 
 ## 1. Fetch
 
@@ -26,7 +26,7 @@ Write down, before any code:
 
 ## 3. Token map
 
-Match every colour, font, size, spacing, radius and shadow against `theme-profile.json.tokens` (or `globals.css`/Tailwind config on other stacks):
+Match every colour, font, size, spacing, radius and shadow against the project's tokens: `theme-profile.json.tokens` if present, otherwise the Sass variables partial, `tailwind.config.*` / `@theme`, or CSS custom properties (`:root`, `globals.css`, design-token JSON):
 `exact` → use it · `implicit` (a repeated literal) → propose a token · `near` (within the deviation-rules tolerance) → flag it, never apply silently · `missing` → a component-scoped custom property `--<block>-<purpose>` set from SCSS.
 
 ## 4. Find the Drupal target (Drupal stacks)
@@ -35,7 +35,8 @@ Using the profile (`contentModel`, `templates`, `preprocess`):
 - Which entity renders this: paragraph type (+ view mode), block_content, node view mode, or view?
 - Does a template already exist (update) or do we add a new suggestion (new)?
 - Which fields exist and how they render (`content.field_x` vs. `paragraph.field_x.value`), and which preprocess variables are available (`is_rtl`, …)?
-- Existing partials to reuse (`_play-pause-button.html.twig`, etc.) and existing JS behaviours that target the same markup.
+- Existing pieces to reuse: SDC components (`component_files.py <name>` or list `components/`), legacy partials (`_*.html.twig`), and JS behaviours that already target the same markup.
+- **SDC**: design the component's **props** (strings, enums, booleans, URLs) and **slots** (rendered fields, images, nested components) from the Figma layers, and plan the adapter template that maps fields → props/slots.
 
 **If the fields or paragraph type don't exist yet, don't create config.** List the needed fields in the spec as a backend dependency.
 
@@ -47,12 +48,12 @@ Show: the component name, Drupal target, new vs. update, reused partials, file l
 Write `<theme>/docs/components/<name>.md`:
 1. Overview + Figma links + screenshots
 2. Markup outline (BEM block `<name>`, elements, modifiers)
-3. Field → Twig mapping table
+3. Field → Twig mapping table (legacy) **or** props/slots table + adapter mapping (SDC)
 4. Token map table
 5. Responsive behaviour per breakpoint
 6. Accessibility notes (headings, names, keyboard, motion, contrast)
 7. JS behaviour (if any): name, selectors, `once` id, events
-8. Files to **create** and files to **change** (with the exact library entries)
+8. Files to **create** and files to **change** (legacy: the exact library entries; SDC: the component.yml, and which adapter template changes)
 9. Open questions / backend dependencies
 
 ### Gate 2: spec review (`AskUserQuestion`)
@@ -60,7 +61,7 @@ Write `<theme>/docs/components/<name>.md`:
 
 ## 6. Generate
 
-Create the new files exactly as `references/stacks/<stack>.md` shows, copying the header and import block from a sibling file in the same folder. Write accessible, performant code from the start (`references/checklists/*`).
+Create the new files exactly as the stack reference shows, copying the header, imports and conventions of a sibling (SDC: a sibling component folder, so the same group folder, name prefix, styling and JS source naming). For SDC, write `<name>.component.yml` first, then the Twig, styles and JS, then the adapter. Write accessible, performant code from the start (`references/checklists/*`).
 
 ### Gate 3: diffs to existing files (`AskUserQuestion`)
 Before editing `<theme>.libraries.yml`, `<theme>.theme`, or any existing template, show a unified diff of each one. Apply only what's approved. Add entries; never delete or reorder existing ones.
@@ -68,7 +69,7 @@ Before editing `<theme>.libraries.yml`, `<theme>.theme`, or any existing templat
 ## 7. Build and cache
 
 ### Gate 4 (`AskUserQuestion`)
-"Run `cd <build.cwd> && PATH=<build.node>:$PATH <build.command>` and `<cacheClear>`?" Only run the build if `node_modules/` exists. Report the output and confirm that the compiled `.css` and `-rtl.css` exist.
+"Run `cd <build.cwd> && PATH=<build.node>:$PATH <build.command>` and `<cacheClear>`?" Only run the build if `node_modules/` exists. Report the output and confirm that the compiled files exist (e.g. `.css`, plus `-rtl.css` with rtlcss, plus the SDC `<name>.css`/`<name>.js`). For SDC, the cache clear is required so Drupal discovers the new component.
 
 ## 8. Visual QA
 

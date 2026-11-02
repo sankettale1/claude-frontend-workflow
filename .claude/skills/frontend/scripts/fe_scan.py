@@ -19,8 +19,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fe_common import SDC_REF, extensions, load_config, owner_extension, project_root, sdc_component  # noqa: E402
+
 MARKUP = ('.twig', '.html', '.htm', '.vue', '.jsx', '.tsx', '.svelte', '.astro')
-STYLE = ('.scss', '.sass', '.css', '.less')
+STYLE = ('.scss', '.sass', '.pcss', '.css', '.less')
 SCRIPT = ('.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx', '.vue', '.svelte')
 PHP = ('.php', '.theme', '.module', '.inc')
 TWIG = ('.twig',)
@@ -98,7 +101,7 @@ RULES = [
     ('id-selector', 'warn', 'standards', STYLE,
      r'^(?![^\n]*(#\{|[(\'"]))[^;\n]*#[A-Za-z_][\w-]*[^;\n]*[{,]\s*$', re.M,
      'ID selector in CSS. Use a class (keeps specificity low and reusable).'),
-    ('hardcoded-color', 'warn', 'tokens', ('.scss', '.sass', '.less'),
+    ('hardcoded-color', 'warn', 'tokens', ('.scss', '.sass', '.pcss', '.less'),
      r'^(?!\s*(\$|--|//))[^\n]*:\s*[^;\n]*#[0-9a-fA-F]{3,8}\b', re.M,
      'Hard-coded colour. Use a theme token ($variable or var(--token)).'),
 ]
@@ -170,8 +173,47 @@ def find_theme_libraries(path):
     return None, set()
 
 
-def drupal_checks(path, text):
+@functools.lru_cache(maxsize=None)
+def custom_extensions():
+    root = project_root()
+    return extensions(load_config(root), root)
+
+
+def sdc_checks(path, text):
+    """Single Directory Component rules (Drupal 10.1+)."""
     findings = []
+    if path.suffix == '.twig':
+        exts = custom_extensions()
+        for m in SDC_REF.finditer(text):
+            provider, name = m.group(1), m.group(2)
+            if provider in exts and sdc_component(exts[provider], name) is None:
+                findings.append(('sdc-missing', 'error', 'drupal', m.start(),
+                                 f'Component "{provider}:{name}" does not exist (no {name}.component.yml in {provider}/components).'))
+        in_components = 'components' in path.parent.parts and path.stem == path.parent.name
+        if in_components:
+            if not (path.parent / f'{path.parent.name}.component.yml').exists():
+                findings.append(('sdc-no-definition', 'error', 'drupal', 0,
+                                 f'SDC template without {path.parent.name}.component.yml next to it.'))
+            for m in re.finditer(r'\bcontent\.\w+|\b(node|paragraph|block_content)\.\w+', text):
+                findings.append(('sdc-entity-access', 'warn', 'drupal', m.start(),
+                                 'SDC templates should receive data via props/slots; read entities/content in the adapter template.'))
+            for m in re.finditer(r'attach_library\(', text):
+                findings.append(('sdc-attach-library', 'warn', 'drupal', m.start(),
+                                 'SDC attaches its own CSS/JS automatically; use libraryOverrides/dependencies in the component.yml.'))
+    if path.name.endswith('.component.yml'):
+        if not re.search(r'^name:', text, re.M):
+            findings.append(('sdc-no-name', 'warn', 'drupal', 0, 'component.yml has no name:'))
+        m = re.search(r'^props:\s*\n((?:[ \t]+.*\n?|[ \t]*\n)*)', text, re.M)
+        if m and not re.search(r'^\s+type:\s*object', m.group(1), re.M):
+            findings.append(('sdc-props-type', 'error', 'drupal', m.start(),
+                             'props must declare "type: object" with "properties:".'))
+        if re.search(r'core/jquery\.once', text):
+            findings.append(('jquery-once', 'error', 'drupal', 0, 'core/jquery.once was removed; use core/once.'))
+    return findings
+
+
+def drupal_checks(path, text):
+    findings = sdc_checks(path, text)
     if path.suffix == '.twig':
         theme, keys = find_theme_libraries(path)
         if theme:

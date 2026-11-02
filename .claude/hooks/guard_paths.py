@@ -2,10 +2,13 @@
 """PreToolUse (Edit|Write|MultiEdit): keep Claude out of files it must not touch.
 
 - deny: core, contrib, vendor, node_modules ... (frontend.config.json protectedPaths)
-- deny: compiled CSS/JS when a dev/ source exists -> edit the source instead
+- deny: compiled CSS/JS (and source maps) when the source exists -> edit the source instead
 - ask:  settings.php, services.yml, package.json, gulpfile.js ... (askPaths)
 """
-from _common import emit, load_config, project_dir, read_input, rel_path
+from _common import emit, load_config, project_dir, read_input, rel_path, skill_scripts
+
+skill_scripts()
+from fe_common import compiled_source  # noqa: E402
 
 data = read_input()
 root = project_dir(data)
@@ -28,22 +31,12 @@ for prefix in cfg.get('protectedPaths', []):
         decide('deny', f'[frontend guard] {rel} is under {prefix}, which is not project code. '
                        'Override it from the custom theme/module (template override, library-override, patch) instead.')
 
-for c in cfg.get('compiled', []):
-    out = c['output']
-    if not rel.startswith(out):
-        continue
-    if rel.endswith('.map'):
-        decide('deny', f'[frontend guard] {rel} is a generated source map. Never edit it by hand.')
-    if not rel.endswith(c['outputExt']):
-        continue
-    stem = rel[len(out):-len(c['outputExt'])]
-    rtl = c.get('rtlSuffix')
-    if rtl and stem.endswith(rtl):
-        stem = stem[:-len(rtl)]
-    source = f"{c['source']}{stem}{c['sourceExt']}"
-    if (root / source).exists():
-        decide('deny', f'[frontend guard] {rel} is compiled output. Edit {source} instead, '
-                       'then run the theme build to regenerate it' + (' (and its -rtl twin).' if rtl else '.'))
+if rel.endswith('.map'):
+    decide('deny', f'[frontend guard] {rel} is a generated source map. Never edit it by hand.')
+source = compiled_source(rel, cfg, root)
+if source:
+    decide('deny', f'[frontend guard] {rel} is compiled output. Edit {source} instead, '
+                   'then run the build to regenerate it.')
 
 for path in cfg.get('askPaths', []):
     if rel == path or rel.endswith('/' + path):

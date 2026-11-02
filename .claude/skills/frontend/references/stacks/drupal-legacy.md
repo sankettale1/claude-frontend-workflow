@@ -2,6 +2,14 @@
 
 Typical setup: a Bootstrap 4 theme with templates, `dev/scss` → `css/` via gulp (+ rtlcss), and `dev/js` → `js/`. Paths below use `<T>` = theme path and `<t>` = theme machine name, from `frontend.config.json`.
 
+## Quick rules
+- Templates: <T>/templates/<group>/<Pascal>/*.html.twig (theme-hook suggestions); partials as _<name>.html.twig next to them.
+- Styles: edit the Sass source (e.g. <T>/dev/scss/style/components/<Pascal>/<name>.scss) only; compiled css/ (and -rtl.css twins) come from the build.
+- JS: edit the source (e.g. <T>/dev/js/components/<name>.js) only, with Drupal.behaviors + core `once` (never jQuery.once).
+- Libraries: <T>/<t>.libraries.yml, one per component (plus a -rtl twin if the theme uses rtlcss), attached from the template (`is_rtl` decides which).
+- Copy the header, imports and patterns of a sibling file in the same folder before writing a new one.
+- After changes: <build> (in <build.cwd>), then <cacheClear>.
+
 ## Where things go
 
 | Piece | Location | Naming |

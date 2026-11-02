@@ -1,6 +1,6 @@
 ---
 name: frontend
-description: One entry point for all frontend work in this project. Covers building UI from a Figma node in the project's own structure (legacy Drupal theme, SDC, React/Next, Vue or plain HTML/CSS), reviewing changed code for accessibility, performance and coding standards with parallel reviewer subagents, auditing a live URL, and applying fixes. Use whenever the user asks to build/implement a design or Figma link, create or change a component, template, SCSS, JS or library, review or audit frontend code, check WCAG, Lighthouse or Core Web Vitals, or "check my FE changes".
+description: One entry point for all frontend work in this project, for any Drupal 9/10/11 project (SDC components, legacy templates+Sass themes, or both) and other stacks (React/Next, Vue, plain HTML/CSS). Covers building UI from a Figma node in the project's own structure, reviewing changed code for accessibility, performance and coding standards with parallel reviewer subagents, auditing a live URL, and applying fixes. Use whenever the user asks to build/implement a design or Figma link, create or change a component, template, SCSS, JS or library, review or audit frontend code, check WCAG, Lighthouse or Core Web Vitals, or "check my FE changes".
 argument-hint: "<component> [figma-url] [--url <page>] [--changed-only] | build <figma-url> | review [--changed | <paths>] | audit <url> | fix [report]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion, mcp__framelink-figma-mcp__get_figma_data, mcp__framelink-figma-mcp__download_figma_images
 ---
@@ -23,9 +23,14 @@ Routing: if the first word is `build`, `review`, `audit` or `fix`, use that mode
 
 ## Step 0: Context (every mode)
 
-1. Read `.claude/frontend.config.json`. If it's missing, detect the stack with `references/stacks/detect.md`, show what you found, and offer to write the config.
-2. Load the stack reference: `references/stacks/<stack>.md` (e.g. `drupal-legacy.md`). This is the source of truth for **where files go and how they're wired**.
-3. For Drupal themes, read `theme.profile` (theme-profile.json) **sections as needed**: templates, tokens, breakpoints, libraries, JS. Don't re-scan facts it already records. If it's missing on a legacy theme, suggest `/legacy-theme-discovery` first, but don't block on it.
+1. Read `.claude/frontend.config.json`. If it's missing, run `python3 .claude/skills/frontend/scripts/detect_project.py` (it prints a config without writing), show the key values (stack, theme, build, compiled pairs), and on approval re-run it with `--write`. If no theme was detected, ask which folder to use.
+2. **Pick the conventions per component, not just per project.** Drupal projects can mix both styles:
+   - an existing component the resolver reports as `kind: "sdc"` → `references/stacks/drupal-sdc.md`
+   - an existing `kind: "legacy"` component → `references/stacks/drupal-legacy.md`
+   - a **new** component → the style in `newComponents` (`sdc` or `legacy`) from the config
+   - non-Drupal stacks → `references/stacks/detect.md`
+   That reference is the source of truth for **where files go and how they're wired**.
+3. If `theme.profile` exists (theme-profile.json from a discovery skill), read **sections as needed** (templates, tokens, breakpoints, libraries, JS) instead of re-scanning. If it doesn't exist, learn conventions from 2 sibling components plus the token source (Sass variables, `tailwind.config.*`, CSS custom properties).
 4. Hooks already protect core/contrib/compiled files and scan each edit. Don't fight them: if a guard denies an edit, follow its instruction.
 
 ## Mode: component (default; one command for any component)
@@ -34,7 +39,7 @@ Routing: if the first word is `build`, `review`, `audit` or `fix`, use that mode
 
 The reviews (accessibility, performance, coding standards) **always** run for every component. Figma and visual QA run **only** when a Figma URL is given.
 
-1. **Resolve the component**: `python3 .claude/skills/frontend/scripts/component_files.py "<component>" --json`. It returns templates (plus included partials and templates that attach its library), the SCSS/JS sources behind its library, the library entries and the preprocess functions. If the user named several things, run it for each and merge. If `tooBroad` is true, ask for a more specific name.
+1. **Resolve the component**: `python3 .claude/skills/frontend/scripts/component_files.py "<component>" --json`. It searches every custom theme and module and returns: SDC components (`components`, with their IDs), templates and partials, adapter templates that use the component (`usedBy`), style/script **sources** (compiled output is excluded), library entries, preprocess functions and the components it uses. Accepts an SDC ID (`mytheme:card`) too. If it matches several SDC components or `tooBroad` is true, ask which one (`AskUserQuestion`, up to 4 options). If the user named several things, run it for each and merge.
 2. **Decide the path** (no question needed when it's obvious):
 
    | Found? | Figma URL? | Do this |
@@ -56,21 +61,21 @@ The reviews (accessibility, performance, coding standards) **always** run for ev
 
 Follow `references/figma-build.md` end to end. Summary of the gates (each one is an `AskUserQuestion`, never auto-approved):
 
-1. **Plan**: Figma analysed, Drupal target chosen (paragraph type, view mode, block or view), new vs. update of an existing template, sub-parts reused.
-2. **Spec**: `<theme>/docs/components/<name>.md` with the token map, markup, file list and diffs to existing files.
-3. **Diffs to existing files**: `<theme>.libraries.yml`, `.theme` preprocess and existing templates, shown before writing.
+1. **Plan**: Figma analysed, structure (SDC or legacy, from Step 0.2), Drupal target chosen (paragraph type, view mode, block or view), new vs. update, sub-components reused.
+2. **Spec**: `<theme>/docs/components/<name>.md` with the token map, props/slots (SDC) or field mapping (legacy), markup, file list and diffs to existing files.
+3. **Diffs to existing files**: adapter templates, `<theme>.libraries.yml`, `.theme` preprocess, shown before writing.
 4. **Build**: run the theme build and clear the cache (ask first).
 5. **Visual QA**: `fe-visual-qa` subagent; the user accepts or asks for fixes.
 
 Then run **Mode: review** on every file you created or changed.
 
-> In a legacy theme, **never generate SDC** (`components/`, `*.component.yml`) unless the user explicitly asks for it. Use the theme's existing template + SCSS + JS + library pattern.
+> Follow `newComponents`: in a legacy theme (`legacy`) **never generate SDC** unless the user explicitly asks; use the template + Sass + JS + library pattern. In an SDC theme (`sdc`) **never add legacy per-component libraries**; build `components/<name>/` and a thin adapter template.
 
 ## Mode: review
 
-1. **Collect files**: with `--changed` or no paths, run `bash .claude/skills/frontend/scripts/changed-files.sh`, which lists uncommitted and branch-changed frontend files, skipping compiled output. Otherwise use the given paths (expand directories with Glob). If there are none, say so and stop.
+1. **Collect files**: with `--changed` or no paths, run `python3 .claude/skills/frontend/scripts/changed_files.py`, which lists uncommitted and branch-changed frontend files, skipping compiled output. Otherwise use the given paths (expand directories with Glob). If there are none, say so and stop.
 2. **Fast scan**: `python3 .claude/skills/frontend/scripts/fe_scan.py --base auto <files>`. This reports only lines changed on this branch; use `--all-lines` instead when the user asks for a full-file audit.
-3. **Parallel reviewers**: in a **single message**, launch three `Agent` calls:
+3. **Parallel reviewers**: in a **single message**, launch three `Agent` calls (for many files, group them per component first with `component_files.py` so each reviewer gets the related files together):
    - `fe-a11y-reviewer`, `fe-perf-reviewer` and `fe-standards-reviewer`
    - Give each one: the stack, theme path, exact file list, the spec path if this came from build mode, and the URL if one is known. Tell them to return their JSON block.
 4. **Merge**: parse the three JSON blocks plus the scan. Dedupe findings with the same file, line and issue (keep the higher severity and note both sources). Sort by critical → major → minor. Drop low-confidence findings you can't confirm by reading the line yourself.
@@ -94,7 +99,7 @@ Then run **Mode: review** on every file you created or changed.
 
 - Put files where `references/stacks/<stack>.md` says; copy the header and pattern of a sibling file.
 - Accessibility, performance and standards rules: `references/checklists/*.md`. Apply them while writing, not only in review.
-- RTL: this site has RTL languages; rely on rtlcss and check that nothing breaks when the layout mirrors.
+- RTL: if `rtl` is true in the config (or the site has RTL languages), check that nothing breaks when the layout mirrors; with rtlcss, write physical properties and let it flip them, otherwise use logical properties.
 - Never install dependencies, never commit, never edit compiled assets.
 
 ## Final summary format

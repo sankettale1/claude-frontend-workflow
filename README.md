@@ -1,8 +1,18 @@
 # Claude Frontend Workflow
 
-One Claude Code command, **`/frontend`**, for all frontend work on a component:
+One Claude Code command, **`/frontend`**, for all frontend work on a component, in **any Drupal 9/10/11 project**:
 
-- **Build** it from a Figma design, in your project's own structure (legacy Drupal theme, SDC, React/Next, Vue or plain HTML)
+| Drupal setup | Supported |
+|---|---|
+| **SDC** themes (`components/<name>/<name>.component.yml`, PostCSS/Tailwind/Sass, webpack/vite) | ✅ |
+| **Legacy** themes (templates + Sass + gulp + `libraries.yml`, optional rtlcss `-rtl.css` twins) | ✅ |
+| **Mixed** (a legacy theme that has started adding SDC) | ✅ per component |
+| Docroot at `./`, `web/`, `docroot/` or `html/`; several custom themes; components in custom modules | ✅ |
+| Non-Drupal: Next/React, Vue/Nuxt, plain HTML | ✅ (basic) |
+
+What it does:
+
+- **Build** a component from a Figma design, in your project's own structure (an SDC folder + adapter template, or legacy template + Sass + JS + library)
 - **Review** it for **accessibility**, **performance** and **coding standards** with three AI reviewers that run **in parallel**
 - **Fix** what they find, safely
 
@@ -85,26 +95,44 @@ This copies the files into `your-project/.claude/`:
 ├── agents/fe-*.md            the 4 reviewer sub-agents
 ├── hooks/*.py                the 6 hooks
 ├── settings.json             registers the hooks (merged if you already have one)
-├── frontend.config.json      YOUR project settings, which you edit in step 3
+├── frontend.config.json      YOUR project settings, AUTO-DETECTED, which you check in step 3
 └── state/                    runtime data (git-ignored)
 ```
 
+- The installer **auto-detects your project**: the docroot, custom themes, SDC vs legacy, the build command, which files are compiled from which sources, RTL and the DDEV URL. It writes `.claude/frontend.config.json` and prints a summary:
+  ```
+    detected       .claude/frontend.config.json
+                   stack: drupal-sdc   new components: sdc   docroot: docroot
+                   theme: mytheme (docroot/themes/custom/mytheme)
+                   build: npm run build (in docroot/themes/custom/mytheme)   compiled pairs: 2   url: https://myproject.ddev.site
+  ```
 - Existing files are **never overwritten**. Use `./install.sh /path --force` to update to a newer version (your `frontend.config.json` is still kept).
 - If `.claude/settings.json` already exists, the hooks are **merged** into it, and a backup is saved as `settings.json.bak`.
 
-**Manual install (instead of the script):** copy the `.claude/` folder of this repo into your project, then rename `frontend.config.example.json` to `frontend.config.json`. If you already have a `.claude/settings.json`, copy the `"hooks"` block into it by hand.
+**Manual install (instead of the script):** copy the `.claude/` folder of this repo into your project, then run `python3 .claude/skills/frontend/scripts/detect_project.py --write` from the project root (or copy `frontend.config.example.json` to `frontend.config.json` and edit it). If you already have a `.claude/settings.json`, copy the `"hooks"` block into it by hand.
 
 ---
 
 ## 3. Configure for your project
 
-Open **`your-project/.claude/frontend.config.json`** and replace `mytheme` and the paths with your own. Every field:
+The installer already filled in **`your-project/.claude/frontend.config.json`**. Open it and **check** the values, especially `theme` (the theme you build in) and `newComponents`. To re-detect at any time:
+
+```bash
+python3 .claude/skills/frontend/scripts/detect_project.py            # print only (review it)
+python3 .claude/skills/frontend/scripts/detect_project.py --write --force   # overwrite the config
+```
+
+Every field:
 
 | Field | Meaning | Example |
 |---|---|---|
-| `stack` | `drupal-legacy` (templates + Sass + gulp, non-SDC), `drupal-sdc`, `next`, `react`, `vue`, `static`. Leave it out to let `/frontend` detect it and suggest a value. | `"drupal-legacy"` |
+| `stack` | The theme's main style: `drupal-sdc` (components/), `drupal-legacy` (templates + Sass + libraries), or `next`, `react`, `vue`, `static` | `"drupal-sdc"` |
+| `newComponents` | Structure for **new** components: `sdc` or `legacy`. Existing components always keep their own structure, so mixed themes work | `"sdc"` |
+| `docroot` | Drupal docroot (`.`, `web`, `docroot`, `html`) | `"web"` |
 | `theme.name` | Theme machine name (the name of `<name>.info.yml`) | `"mytheme"` |
-| `theme.path` | Theme folder, relative to the project root | `"themes/custom/mytheme"` |
+| `theme.path` | Theme folder, relative to the project root | `"web/themes/custom/mytheme"` |
+| `otherThemes` | Other custom themes (searched for components too) | `["web/themes/custom/admin_x"]` |
+| `rtl` | The theme builds RTL CSS (rtlcss/postcss-rtlcss) | `true` |
 | `theme.profile` | *Optional* theme-profile JSON (from a theme discovery skill). If it exists, Claude reads facts from it instead of re-scanning the theme. | `".claude/theme-discovery/theme-profile.json"` |
 | `localUrl` | Your local site | `"https://myproject.ddev.site"` |
 | `build.command` / `build.cwd` | How to compile SCSS/JS, and from which folder | `"npm run build"`, `"themes/custom/mytheme"` |
@@ -113,10 +141,20 @@ Open **`your-project/.claude/frontend.config.json`** and replace `mytheme` and t
 | `cacheClear` | Cache-clear command | `"ddev drush cr"` |
 | `protectedPaths` | Folders Claude may **never edit** | `core/`, `vendor/`, `modules/contrib/` … |
 | `askPaths` | Files Claude must **ask before editing** | `settings.php`, `package.json` … |
-| `compiled` | Source → compiled-output pairs. Editing a compiled file is blocked when its source exists, and the stop gate flags out-of-date output. `rtlSuffix` covers rtlcss twins like `x-rtl.css`. | see the example file |
+| `compiled` | Source → compiled-output pairs. Editing a compiled file is blocked when its source exists, and the stop gate flags out-of-date output. Works for separate folders (legacy `dev/scss/` → `css/`) and side-by-side SDC files (`card.pcss` → `card.css`, `card.behavior.js` → `card.js`). `rtlSuffix` covers rtlcss twins like `x-rtl.css`. | see below |
 | `reviewRoots` | Folders that count as "your frontend code" for `review --changed` | `["themes/custom/mytheme/", "modules/custom/"]` |
 | `reviewGate` | `"block"`: Claude must fix new errors before finishing (once per problem set). `"warn"`: only show a summary. | `"block"` |
 | `reportsDir` | Where review reports are written | `"themes/custom/mytheme/docs/frontend-reviews"` |
+
+Examples of `compiled`:
+
+```jsonc
+// Legacy theme: separate source and output folders
+{ "source": "themes/custom/mytheme/dev/scss/", "sourceExt": ".scss", "output": "themes/custom/mytheme/css/", "outputExt": ".css", "rtlSuffix": "-rtl" }
+// SDC theme: compiled file next to its source inside components/
+{ "source": "web/themes/custom/mytheme/components/", "sourceExt": ".pcss", "output": "web/themes/custom/mytheme/components/", "outputExt": ".css" }
+{ "source": "web/themes/custom/mytheme/components/", "sourceExt": ".behavior.js", "output": "web/themes/custom/mytheme/components/", "outputExt": ".js" }
+```
 
 > Using a **non-Drupal** project? Set `stack` (e.g. `"next"`), point `theme.path` at your source folder (e.g. `"src"`), leave `compiled` empty (`[]`) unless you commit build output, and adjust `protectedPaths`.
 
@@ -171,7 +209,7 @@ Test the scripts directly, without Claude:
 ```bash
 python3 .claude/skills/frontend/scripts/component_files.py "my component"   # which files belong to it
 python3 .claude/skills/frontend/scripts/fe_scan.py --all-lines path/to/file.html.twig
-bash    .claude/skills/frontend/scripts/changed-files.sh                     # frontend files changed on your branch
+python3 .claude/skills/frontend/scripts/changed_files.py                   # frontend files changed on your branch
 ```
 
 ---
@@ -180,11 +218,17 @@ bash    .claude/skills/frontend/scripts/changed-files.sh                     # f
 
 ### The one command: `/frontend <component>`
 
-Works for **any** component, existing or new. The name can be written any way you like: `strategic-cards`, `StrategicCards`, `"Strategic cards"`, `strategic_cards`, or a path.
+Works for **any** component, existing or new, SDC or legacy. The name can be written any way you like: `pricing-card`, `PricingCard`, `"Pricing card"`, `pricing_card`, an SDC ID (`mytheme:pricing-card`), or a path. It searches **all custom themes and modules** and finds:
+
+- **SDC**: the component folder (`.component.yml`, `.twig`, style/JS **sources**, stories, README) and the Drupal templates that `include`/`embed` it
+- **Legacy**: the templates and partials, the Sass/JS sources behind its library, the `libraries.yml` entries, the templates that attach it, and preprocess functions
+
+If a name matches several components (e.g. "card"), it asks which one.
 
 | You type | What happens |
 |---|---|
 | `/frontend strategic-cards` | **Existing component, review only.** Finds all its files and runs the 3 reviewers in parallel, giving one report. |
+| `/frontend mytheme:pricing-card` | Same, for an SDC component by its ID. |
 | `/frontend pricing-table https://www.figma.com/design/KEY/File?node-id=12-345` | **New component with a design.** Builds it from Figma in your structure (with approval steps), then reviews it. |
 | `/frontend pricing-table` *(doesn't exist, no Figma)* | Asks whether to scaffold it from your description, then reviews it. |
 | `/frontend hero-banner <figma-url> --url https://myproject.ddev.site/node/12` | Review **plus** visual QA against Figma **plus** runtime checks (Lighthouse/a11y) on that page, all in the same parallel batch. |
@@ -214,8 +258,10 @@ Claude stops for your approval at every **⏸** step:
 4. **Drupal target:** which paragraph type, view mode, block or view renders it; new template or update; partials to reuse. (It never creates fields or config; missing fields are listed as backend dependencies.)
 5. ⏸ **Plan approval**
 6. **Spec:** written to `<theme>/docs/components/<name>.md`. ⏸ **Spec approval** (you can edit the file first).
-7. **Generate:** the template, SCSS and JS in your structure (legacy: `templates/…/<Pascal>/`, `dev/scss/style/components/<Pascal>/`, `dev/js/components/`).
-8. ⏸ **Diffs to existing files:** `libraries.yml` entries (LTR + `-rtl`), preprocess and existing templates are shown as diffs before writing.
+7. **Generate** in your structure (from `newComponents`):
+   - **SDC:** `components/<group>/<name>/` with `<name>.component.yml` (props + slots), `<name>.twig`, styles and JS (sources if the theme compiles them), then a thin **adapter** template (`paragraph--<bundle>.html.twig` → `{% embed 'mytheme:<name>' … %}`)
+   - **Legacy:** template in `templates/…/<Pascal>/`, Sass in the theme's Sass folder, JS in its JS source folder, and a `libraries.yml` entry (+ `-rtl` twin with rtlcss)
+8. ⏸ **Diffs to existing files:** adapter templates, `libraries.yml` entries, preprocess and existing templates are shown as diffs before writing.
 9. ⏸ **Build + cache clear:** runs your build command and `drush cr`.
 10. **Visual QA:** screenshots at 375/768/1366 compared with the Figma frames, with up to 2 fix rounds. ⏸ **Accept**
 11. **Review:** the 3 reviewers in parallel, with critical and major issues fixed.
@@ -242,6 +288,7 @@ In practice the hooks back each other up: if Claude ignores the post-edit warnin
 - **a11y:** img-alt, iframe-title, positive-tabindex, click handler on div/span, `href="#"`, zoom lock, `outline: none`, autoplay without muted
 - **perf:** img without width/height, render-blocking `<script src>`, remote `@import`, `document.write`
 - **standards / security / Drupal:** `console.log`, `debugger`, jQuery.once, `dump()`/`kint()`/`dpm()`, `|raw`, `target="_blank"` without rel, `!important`, ID selectors, hard-coded colours, `attach_library` with an undefined library, a missing asset file in `libraries.yml`
+- **SDC:** `include`/`embed` of a `provider:name` component that doesn't exist, a component template without its `.component.yml`, `props` without `type: object`, `content.*`/entity access or `attach_library` inside a component
 
 ---
 
@@ -253,7 +300,7 @@ Defined in `.claude/agents/`. They are **read-only** (they never edit) and retur
 |---|---|---|
 | `fe-a11y-reviewer` | WCAG 2.2 AA: semantics, headings, names, keyboard, focus, ARIA, contrast (computed), motion, carousels/video, RTL, translatable strings | sonnet |
 | `fe-perf-reviewer` | Core Web Vitals: LCP image handling, CLS (reserved space, JS-initialised widgets), INP (listeners, observers, `once`), CSS weight, Drupal library and render-cache patterns. Runs Lighthouse when a URL is given and a Lighthouse script is available | sonnet |
-| `fe-standards-reviewer` | Project structure, Twig, SCSS (BEM, tokens, nesting, mixins), JS (behaviours + `once`, ES level), `libraries.yml`, PHP preprocess, security | sonnet |
+| `fe-standards-reviewer` | Project structure, SDC (component.yml schema, props vs. slots, thin adapters), Twig, SCSS/PostCSS/Tailwind (BEM, tokens, nesting), JS (behaviours + `once`, ES level), `libraries.yml`, PHP preprocess, security | sonnet |
 | `fe-visual-qa` | Screenshots at 375/768/1366 vs. Figma frames: layout, spacing, typography, colours, RTL mirroring | sonnet |
 
 Their rules live in `.claude/skills/frontend/references/checklists/` (accessibility, performance, standards). If your team has these skills installed in `~/.claude/skills/`, the reviewers **also** read them as the authoritative source: `accessibility-audit`, `performance-audit`, `drupal-coding-standards`. They are optional.
@@ -293,6 +340,8 @@ Each review writes two files to `reportsDir`:
 
 | Problem | Fix |
 |---|---|
+| The wrong theme was detected | Edit `theme` in `.claude/frontend.config.json` (the detector picks the custom theme with the most components/templates and a build). Run `detect_project.py` (no `--write`) to see what it finds |
+| New components get the wrong structure | Set `"newComponents": "sdc"` or `"legacy"` |
 | `/frontend` isn't suggested | Start Claude Code **from the project root** (where `.claude/` is), and check that `.claude/skills/frontend/SKILL.md` exists |
 | Hooks don't fire | Run `/hooks`. Hooks come from the **project** `.claude/settings.json`, so Claude must be opened in that folder. Check `python3` is on PATH. Run `claude --debug hooks` to see each hook run |
 | A hook blocks something legitimate | Read its message: it says why. Adjust `protectedPaths`/`askPaths`, or run the command yourself in a terminal |
@@ -327,13 +376,16 @@ Then remove the hook entries from `.claude/settings.json`, or restore `.claude/s
 │   ├── SKILL.md                          the /frontend playbook (modes, steps, gates)
 │   ├── references/
 │   │   ├── figma-build.md                Figma → code steps and approval gates
-│   │   ├── stacks/detect.md              stack detection + conventions for SDC/React/Next/Vue/static
-│   │   ├── stacks/drupal-legacy.md       where files go and code patterns for legacy Drupal themes
+│   │   ├── stacks/detect.md              stack detection + conventions for React/Next/Vue/static
+│   │   ├── stacks/drupal-sdc.md          SDC: folder layout, component.yml, Twig, JS, adapter templates
+│   │   ├── stacks/drupal-legacy.md       legacy themes: templates, Sass, JS, libraries.yml
 │   │   └── checklists/                   accessibility.md · performance.md · standards.md
 │   └── scripts/
-│       ├── component_files.py            finds every file of a component (follows libraries + includes)
+│       ├── detect_project.py             auto-detects the project → frontend.config.json
+│       ├── fe_common.py                  shared helpers (config, compiled-file pairs, themes/modules)
+│       ├── component_files.py            finds every file of a component (SDC + legacy, all custom themes/modules)
 │       ├── fe_scan.py                    fast static scanner (changed lines, branch, or whole file)
-│       ├── changed-files.sh              frontend files changed on the branch
+│       ├── changed_files.py              frontend files changed on the branch
 │       └── render_report.py              merged findings JSON → Markdown report
 ├── agents/
 │   ├── fe-a11y-reviewer.md
@@ -344,7 +396,7 @@ Then remove the hook entries from `.claude/settings.json`, or restore `.claude/s
     ├── _common.py                        shared helpers
     ├── session_start.py · guard_paths.py · guard_bash.py
     ├── post_edit_scan.py · stop_gate.py · notify.py
-install.sh                                installer (never overwrites; merges settings.json)
+install.sh                                installer (auto-detects config; never overwrites; merges settings.json)
 ```
 
 ---

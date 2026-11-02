@@ -28,8 +28,16 @@ For Drupal-specific rules, the team skill `~/.claude/skills/drupal-coding-standa
 - Strings: `Drupal.t()`; settings: `drupalSettings`; no globals; clean up in `detach` when listeners are added to `window`/`document`.
 - No jQuery in new code unless the file or its library already depends on it.
 
+## SDC components
+- Folder `components/[<group>/]<name>/` with `<name>.component.yml` + `<name>.twig`; follow the siblings' group folders and name prefix.
+- component.yml: `$schema`, `name`, `status`, `props: {type: object, properties: …}`; each prop has `type`, `title`, `examples`; variants are `enum`s; rendered markup is a **slot**, not a string prop.
+- The component Twig uses only its props/slots + `attributes` (no `content.*`, entities, `attach_library` or preprocess variables); the root element prints `{{ attributes.addClass(classes) }}`.
+- Dependencies go in `libraryOverrides.dependencies` (core/drupal, core/once).
+- Adapter templates stay thin: `include`/`embed` with `with_context = false`/`only`, mapping fields → props/slots.
+- Components referenced as `provider:name` must exist.
+
 ## libraries.yml
-- Paths relative to the theme; LTR + `-rtl` twin; `core/drupal` and `core/once` when there's JS; never `core/jquery.once`.
+- Paths relative to the theme; an LTR + `-rtl` twin only when the theme uses rtlcss-generated `-rtl.css` files; `core/drupal` and `core/once` when there's JS; never `core/jquery.once`.
 - Keep entries next to related ones; don't reorder or reformat existing entries.
 
 ## PHP (.theme preprocess)

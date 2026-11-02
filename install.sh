@@ -53,10 +53,24 @@ else
   echo "  added          .claude/settings.json"
 fi
 
+chmod +x "$dest"/hooks/*.py "$dest"/skills/frontend/scripts/*
+
 if [[ ! -e "$dest/frontend.config.json" ]]; then
-  cp "$here/.claude/frontend.config.example.json" "$dest/frontend.config.json"
-  echo "  added          .claude/frontend.config.json   <-- edit this for your project (README step 3)"
+  if python3 "$dest/skills/frontend/scripts/detect_project.py" "$target" --write >/dev/null 2>&1; then
+    echo "  detected       .claude/frontend.config.json"
+    python3 - "$dest/frontend.config.json" <<'EOF'
+import json, sys
+c = json.load(open(sys.argv[1]))
+t, b = c.get('theme', {}), c.get('build', {})
+print(f"                 stack: {c.get('stack')}   new components: {c.get('newComponents')}   docroot: {c.get('docroot')}")
+print(f"                 theme: {t.get('name')} ({t.get('path')})" + (f"   other themes: {', '.join(c['otherThemes'])}" if c.get('otherThemes') else ''))
+print(f"                 build: {b.get('command')} (in {b.get('cwd')})   compiled pairs: {len(c.get('compiled', []))}   url: {c.get('localUrl')}")
+EOF
+    echo "  -> check these values in .claude/frontend.config.json (README step 3)"
+  else
+    cp "$here/.claude/frontend.config.example.json" "$dest/frontend.config.json"
+    echo "  added          .claude/frontend.config.json (example)   <-- edit this for your project (README step 3)"
+  fi
 fi
 
-chmod +x "$dest"/hooks/*.py "$dest"/skills/frontend/scripts/*
-echo "Done. Next: edit .claude/frontend.config.json, then restart Claude Code in $target."
+echo "Done. Next: review .claude/frontend.config.json, then restart Claude Code in $target."

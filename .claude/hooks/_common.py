@@ -53,6 +53,11 @@ def save_state(root, session_id, state):
     state_file(root, session_id).write_text(json.dumps(state, indent=2))
 
 
+def skill_scripts():
+    """Make .claude/skills/frontend/scripts importable (fe_common, fe_scan)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'skills' / 'frontend' / 'scripts'))
+
+
 def emit(obj):
     print(json.dumps(obj))
     sys.exit(0)
